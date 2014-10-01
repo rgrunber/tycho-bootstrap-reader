@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
@@ -32,18 +33,6 @@ public class TychoBootstrapMojo extends AbstractMojo {
 
     private static final String EXPECTED_GID = "org.eclipse.tycho";
     private static final String EXPECTED_AID = "tycho";
-
-    /*
-     *  TODO : This could be discovered automatically.
-     *  Any dependency whose :
-     *  - groupId is org.eclipse.tycho
-     *  - version is ${tychoBootstrapVersion}
-     */
-    @Parameter (property = "projects",
-            defaultValue = "target-platform-configuration,"
-                    + "tycho-maven-plugin,tycho-packaging-plugin,"
-                    + "tycho-p2-repository-plugin")
-    private String [] targetArtifactIds;
 
     @Parameter(property = "session", readonly = true)
     private MavenSession session;
@@ -62,7 +51,9 @@ public class TychoBootstrapMojo extends AbstractMojo {
 
         createProjectDepMap(idToDeps);
 
-        for (String aid : targetArtifactIds) {
+        Set<String> targetArtifactIds = getInitialBootstrapArtifacts();
+
+        for (String aid :targetArtifactIds ) {
             resolve(aid);
         }
 
@@ -73,6 +64,21 @@ public class TychoBootstrapMojo extends AbstractMojo {
         }
 
         getLog().info("Completed Tycho Bootstrap Reading!");
+    }
+
+    private Set<String> getInitialBootstrapArtifacts() {
+        Set<String> res = new HashSet<String> ();
+        String tychoBootstrapVersion = session.getProjects().get(0).getProperties().getProperty("tychoBootstrapVersion");
+        for (MavenProject proj : session.getProjects()) {
+            for (Artifact plugin : proj.getPluginArtifacts()) {
+                if (EXPECTED_GID.equals(plugin.getGroupId())
+                        && plugin.getVersion().equals(tychoBootstrapVersion)
+                        && ! isExcluded(proj)) {
+                    res.add(plugin.getArtifactId());
+                }
+            }
+        }
+        return res;
     }
 
     public void resolve (String artifactId) {
@@ -95,6 +101,11 @@ public class TychoBootstrapMojo extends AbstractMojo {
         for (MavenProject proj : session.getProjects()) {
             mappings.put(proj.getArtifactId(), proj.getDependencies());
         }
+    }
+
+    public boolean isExcluded (MavenProject proj) {
+        return proj.getArtifactId().contains("surefire")
+                || proj.getPackaging().equals("eclipse-test-plugin");
     }
 
 }
